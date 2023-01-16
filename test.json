@@ -1,0 +1,14 @@
+{
+    "string": "b",
+    "string-with-escaped-stuff": "\"\n\t",
+    "number": 4234746,
+    "array": ["foo", 42, {"foo": 42}, ["foo", 42]],
+    "bool": true,
+    "other-bool": false,
+    "null": null,
+    "tree": {
+        "tree": {
+            "data": [{}, {}, {}]
+        }
+    }
+}
