@@ -106,6 +106,8 @@ data JValue = JObject (M.HashMap String JValue)
             | JBool   Bool
             | JNull
 
+
+
 instance Show JValue where
   show = \case
     JNull     -> "null"
@@ -162,5 +164,7 @@ main = do
   args <- getArgs
   for_ args $ \filename -> do
     content <- readFile filename
-    putStrLn content
-    print $ run json content
+    case run json content of
+        (Right jvalue) -> putStrLn $ show $ jvalue
+        (Left err) -> putStrLn $ show $ err
+
