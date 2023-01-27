@@ -42,6 +42,3 @@ jobs:
     - name: Run tests
       run: cabal test all
 
-    - name: Run Fourmolu
-      uses: fourmolu/fourmolu-action@v2
-
