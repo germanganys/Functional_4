@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, Rank2Types #-}
 -- | JSON serializer and deserializer using Data.Generics.
 -- The functions here handle algebraic data types and primitive types.
 -- It uses the same representation as "Text.JSON" for "Prelude" types.
@@ -10,14 +10,12 @@ module Text.JSON.Generic
     , fromJSON
     , encodeJSON
     , decodeJSON
-
-    , toJSON_generic
-    , fromJSON_generic
     ) where
 
 import Control.Monad.State
 import Text.JSON
-import Text.JSON.String ( runGetJSON )
+import Text.JSON.String (parseJSValue)
+import Data.Time.Clock (UTCTime)
 import Data.Generics
 import Data.Word
 import Data.Int
@@ -25,16 +23,14 @@ import Data.Int
 import qualified Data.ByteString.Char8 as S
 import qualified Data.ByteString.Lazy.Char8 as L
 import qualified Data.IntSet as I
--- FIXME: The JSON library treats this specially, needs ext2Q
--- import qualified Data.Map as M
+import Text.ParserCombinators.Parsec (parse)
 
 type T a = a -> JSValue
 
 -- |Convert anything to a JSON value.
 toJSON :: (Data a) => a -> JSValue
-toJSON = toJSON_generic
+toJSON = toJSONGeneric
          `ext1Q` jList
-         -- Use the standard encoding for all base types.
          `extQ` (showJSON :: T Integer)
          `extQ` (showJSON :: T Int)
          `extQ` (showJSON :: T Word8)
@@ -55,6 +51,7 @@ toJSON = toJSON_generic
          `extQ` (showJSON :: T Ordering)
          -- More special cases.
          `extQ` (showJSON :: T I.IntSet)
+         `extQ` (showJSON :: T UTCTime)
          `extQ` (showJSON :: T S.ByteString)
          `extQ` (showJSON :: T L.ByteString)
   where
@@ -62,8 +59,8 @@ toJSON = toJSON_generic
         jList vs = JSArray $ map toJSON vs
 
 
-toJSON_generic :: (Data a) => a -> JSValue
-toJSON_generic = generic
+toJSONGeneric :: (Data a) => a -> JSValue
+toJSONGeneric = generic
   where
         -- Generic encoding of an algebraic data type.
         --   No constructor, so it must be an error value.  Code it anyway as JSNull.
@@ -73,25 +70,23 @@ toJSON_generic = generic
         generic a =
             case dataTypeRep (dataTypeOf a) of
                 AlgRep []  -> JSNull
-                AlgRep [c] -> encodeArgs c (gmapQ toJSON a)
-                AlgRep _   -> encodeConstr (toConstr a) (gmapQ toJSON a)
-                rep        -> err (dataTypeOf a) rep
-           where
-              err dt r = error $ "toJSON: not AlgRep " ++ show r ++ "(" ++ show dt ++ ")"
+                AlgRep [c] -> encodeArgs c (toJSON `gmapQ` a)
+                AlgRep _   -> encodeConstr (toConstr a) (toJSON `gmapQ` a)
+                rep        -> error $ "toJSON: not AlgRep " ++ show rep ++ "(" ++ show ((dataTypeOf a)) ++ ")"
+
         -- Encode nullary constructor as a string.
         -- Encode non-nullary constructors as an object with the constructor
         -- name as the single field and the arguments as the value.
         -- Use an array if the are no field names, but elide singleton arrays,
         -- and use an object if there are field names.
-        encodeConstr c [] = JSString $ toJSString $ constrString c
-        encodeConstr c as = jsObject [(constrString c, encodeArgs c as)]
+        encodeConstr constr [] = JSString $ toJSString $ showConstr constr
+        encodeConstr constr argList = jsObject [(showConstr constr, encodeArgs constr argList)]
 
-        constrString = showConstr
-
-        encodeArgs c = encodeArgs' (constrFields c)
-        encodeArgs' [] [j] = j
-        encodeArgs' [] js  = JSArray js
-        encodeArgs' ns js  = jsObject $ zip (map mungeField ns) js
+        encodeArgs constr argList = encodeArgs' (constrFields constr) argList
+            where
+                encodeArgs' [] [j] = j
+                encodeArgs' [] js  = JSArray js
+                encodeArgs' ns js  = jsObject $ zip (map mungeField ns) js
 
         -- Skip leading '_' in field name so we can use keywords etc. as field names.
         mungeField ('_':cs) = cs
@@ -105,7 +100,7 @@ type F a = Result a
 
 -- |Convert a JSON value to anything (fails if the types do not match).
 fromJSON :: (Data a) => JSValue -> Result a
-fromJSON j = fromJSON_generic j
+fromJSON j = fromJSONGeneric j
              `ext1R` jList
 
              `extR` (value :: F Integer)
@@ -130,6 +125,8 @@ fromJSON j = fromJSON_generic j
              `extR` (value :: F I.IntSet)
              `extR` (value :: F S.ByteString)
              `extR` (value :: F L.ByteString)
+             `extR` (value :: F UTCTime)
+
   where value :: (JSON a) => Result a
         value = readJSON j
 
@@ -139,13 +136,12 @@ fromJSON j = fromJSON_generic j
                 _ -> Error $ "fromJSON: Prelude.[] bad data: " ++ show j
 
 
-
-fromJSON_generic :: (Data a) => JSValue -> Result a
-fromJSON_generic j = generic
+fromJSONGeneric :: (Data a) => JSValue -> Result a
+fromJSONGeneric j = generic
   where
         typ = dataTypeOf $ resType generic
         generic = case dataTypeRep typ of
-                      AlgRep []  -> case j of JSNull -> return (error "Empty type"); _ -> Error $ "fromJSON: no-constr bad data"
+                      AlgRep []  -> case j of JSNull -> return (error "Empty type"); _ -> Error "fromJSON: no-constr bad data"
                       AlgRep [_] -> decodeArgs (indexConstr typ 1) j
                       AlgRep _   -> do (c, j') <- getConstr typ j; decodeArgs c j'
                       rep        -> Error $ "fromJSON: " ++ show rep ++ "(" ++ show typ ++ ")"
@@ -160,7 +156,6 @@ fromJSON_generic j = generic
         decodeArgs' 0 c  _       JSNull               = construct c []   -- nullary constructor
         decodeArgs' 1 c []       jd                   = construct c [jd] -- unary constructor
         decodeArgs' n c []       (JSArray js) | n > 1 = construct c js   -- no field names
-        -- FIXME? We could allow reading an array into a constructor with field names.
         decodeArgs' _ c fs@(_:_) (JSObject o)         = selectFields (fromJSObject o) fs >>= construct c -- field names
         decodeArgs' _ c _        jd                   = Error $ "fromJSON: bad decodeArgs data " ++ show (c, jd)
 
@@ -181,16 +176,14 @@ fromJSON_generic j = generic
         resType :: Result a -> a
         resType _ = error "resType"
 
--- |Encode a value as a string.
 encodeJSON :: (Data a) => a -> String
 encodeJSON x = showJSValue (toJSON x) ""
 
--- |Decode a string as a value.
 decodeJSON :: (Data a) => String -> a
 decodeJSON s =
-    case runGetJSON readJSValue s of
-    Left msg -> error msg
+    case parse parseJSValue "" s of
+    Left msg -> error $ show msg
     Right j ->
-        case fromJSON j of
-        Error msg -> error msg
-        Ok x -> x
+       case fromJSON j of
+           Error msg -> error msg
+           Ok x -> x

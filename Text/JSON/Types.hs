@@ -13,46 +13,26 @@ module Text.JSON.Types (
   , JSObject({-fromJSObject-}..)
   , toJSObject
 
-  , get_field
-  , set_field
+  , getField
+  , setField
 
   ) where
 
 import Data.Typeable ( Typeable )
 import Data.String(IsString(..))
 
---
--- | JSON values
---
--- The type to which we encode Haskell values. There's a set
--- of primitives, and a couple of heterogenous collection types.
---
--- Objects:
---
--- An object structure is represented as a pair of curly brackets
--- surrounding zero or more name\/value pairs (or members).  A name is a
--- string.  A single colon comes after each name, separating the name
--- from the value.  A single comma separates a value from a
--- following name.
---
--- Arrays:
---
--- An array structure is represented as square brackets surrounding
--- zero or more values (or elements).  Elements are separated by commas.
---
--- Only valid JSON can be constructed this way
---
+
 data JSValue
     = JSNull
     | JSBool     !Bool
-    | JSRational Bool{-as Float?-} !Rational
+    | JSRational Bool !Rational
     | JSString   JSString
     | JSArray    [JSValue]
     | JSObject   (JSObject JSValue)
     deriving (Show, Read, Eq, Ord, Typeable)
 
 -- | Strings can be represented a little more efficiently in JSON
-newtype JSString   = JSONString { fromJSString :: String }
+newtype JSString = JSONString { fromJSString :: String }
     deriving (Eq, Ord, Show, Read, Typeable)
 
 -- | Turn a Haskell string into a JSON string.
@@ -68,16 +48,16 @@ instance IsString JSValue where
 
 -- | As can association lists
 newtype JSObject e = JSONObject { fromJSObject :: [(String, e)] }
-    deriving (Eq, Ord, Show, Read, Typeable )
+    deriving (Eq, Ord, Show, Read, Typeable)
 
 -- | Make JSON object out of an association list.
-toJSObject :: [(String,a)] -> JSObject a
+toJSObject :: [(String, a)] -> JSObject a
 toJSObject = JSONObject
 
 -- | Get the value of a field, if it exist.
-get_field :: JSObject a -> String -> Maybe a
-get_field (JSONObject xs) x = lookup x xs
+getField :: JSObject a -> String -> Maybe a
+getField (JSONObject xs) x = lookup x xs
 
 -- | Set the value of a field.  Previous values are overwritten.
-set_field :: JSObject a -> String -> a -> JSObject a
-set_field (JSONObject xs) k v = JSONObject ((k,v) : filter ((/= k).fst) xs)
+setField :: JSObject a -> String -> a -> JSObject a
+setField (JSONObject xs) k v = JSONObject ((k,v) : filter ((/= k).fst) xs)

@@ -1,4 +1,5 @@
-{-# LANGUAGE CPP, TypeSynonymInstances, FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
+
 -- | Serialising Haskell values to and from JSON values.
 module Text.JSON (
     -- * JSON Types
@@ -24,11 +25,6 @@ module Text.JSON (
   , fromJSObject
   , resultToEither
 
-    -- * Serialization to and from Strings.
-    -- ** Reading JSON
-  , readJSNull, readJSBool, readJSString, readJSRational
-  , readJSArray, readJSObject, readJSValue
-
     -- ** Writing JSON
   , showJSNull, showJSBool, showJSArray
   , showJSRational, showJSRational'
@@ -45,7 +41,7 @@ import Text.JSON.String
 
 import Data.Int
 import Data.Word
-import Control.Monad.Fail (MonadFail (..))
+import Control.Monad.Fail()
 import Control.Monad(liftM,ap,MonadPlus(..))
 import Control.Applicative
 
@@ -56,9 +52,13 @@ import qualified Data.Set as Set
 import qualified Data.Map as M
 import qualified Data.IntMap as IntMap
 
+import Data.Time.Format.ISO8601
+import Data.Time.Clock (UTCTime)
+
 import qualified Data.Array as Array
 import qualified Data.Text as T
-
+import Text.ParserCombinators.Parsec hiding (getInput, setInput)
+import Text.Parsec.Error()
 ------------------------------------------------------------------------
 
 -- | Decode a String representing a JSON value 
@@ -68,9 +68,9 @@ import qualified Data.Text as T
 -- Array and Object are allowed at the top level.
 --
 decode :: (JSON a) => String -> Result a
-decode s = case runGetJSON readJSValue s of
+decode s = case parse parseJSValue "" s of
              Right a  -> readJSON a
-             Left err -> Error err
+             Left err -> Error $ show $ err
 
 -- | Encode a Haskell value into a string, in JSON format.
 --
@@ -78,7 +78,7 @@ decode s = case runGetJSON readJSValue s of
 -- Array and Object are allowed at the top level.
 --
 encode :: (JSON a) => a -> String
-encode = (flip showJSValue [] . showJSON)
+encode = flip showJSValue [] . showJSON
 
 ------------------------------------------------------------------------
 
@@ -86,16 +86,16 @@ encode = (flip showJSValue [] . showJSON)
 -- This follows the spec, and requires top level
 -- JSON types to be an Array or Object.
 decodeStrict :: (JSON a) => String -> Result a
-decodeStrict s = case runGetJSON readJSTopType s of
+decodeStrict s = case parse parseJSTopType "" s of
      Right a  -> readJSON a
-     Left err -> Error err
+     Left err -> Error $ show $ err
 
 -- | Encode a value as a String in strict JSON format.
 -- This follows the spec, and requires all values
 -- at the top level to be wrapped in either an Array or Object.
 -- JSON types to be an Array or Object.
 encodeStrict :: (JSON a) => a -> String
-encodeStrict = (flip showJSTopType [] . showJSON)
+encodeStrict = flip showJSTopType [] . showJSON
 
 ------------------------------------------------------------------------
 
@@ -124,7 +124,7 @@ instance Functor Result where fmap = liftM
 
 instance Applicative Result where
   (<*>) = ap
-  pure  = return
+  pure  = Ok
 
 instance Alternative Result where
   Ok a    <|> _ = Ok a
@@ -137,16 +137,16 @@ instance MonadPlus Result where
   mzero          = Error "Result: MonadPlus.empty"
 
 instance Monad Result where
-  return x      = Ok x
+  return        = pure
   Ok a >>= f    = f a
   Error x >>= _ = Error x
 
 instance MonadFail Result where
-  fail x        = Error x
+  fail = Error
 
 -- | Convenient error generation
 mkError :: String -> Result a
-mkError s = Error s
+mkError = Error
 
 --------------------------------------------------------------------
 --
@@ -180,6 +180,12 @@ instance (JSON a) => JSON (JSObject a) where
 -- Instances
 --
 
+instance JSON UTCTime where
+  showJSON = JSString . toJSString . iso8601Show
+  readJSON (JSString s) = iso8601ParseM (fromJSString s)
+  readJSON _          = mkError "Unable to read Bool"
+
+
 instance JSON Bool where
   showJSON = JSBool
   readJSON (JSBool b) = return b
@@ -207,7 +213,7 @@ instance JSON Ordering where
          "LT" -> return Prelude.LT
          "EQ" -> return Prelude.EQ
          "GT" -> return Prelude.GT
-         _    -> mkError ("Unable to read Ordering")
+         _    -> mkError "Unable to read Ordering"
 
 -- -----------------------------------------------------------------
 -- Integral types
@@ -291,7 +297,7 @@ instance JSON Float where
 instance (JSON a) => JSON (Maybe a) where
   readJSON (JSObject o) = case "Just" `lookup` as of
       Just x -> Just <$> readJSON x
-      _      -> case ("Nothing" `lookup` as) of
+      _      -> case "Nothing" `lookup` as of
           Just JSNull -> return Nothing
           _           -> mkError "Unable to read Maybe"
     where as = fromJSObject o
@@ -351,7 +357,6 @@ instance JSON a => JSON [a] where
 
 -- container types:
 
-#if !defined(MAP_AS_DICT)
 instance (Ord a, JSON a, JSON b) => JSON (M.Map a b) where
   showJSON = encJSArray M.toList
   readJSON = decJSArray "Map" M.fromList
@@ -359,17 +364,6 @@ instance (Ord a, JSON a, JSON b) => JSON (M.Map a b) where
 instance (JSON a) => JSON (IntMap.IntMap a) where
   showJSON = encJSArray IntMap.toList
   readJSON = decJSArray "IntMap" IntMap.fromList
-
-#else
-instance (Ord a, JSKey a, JSON b) => JSON (M.Map a b) where
-  showJSON    = encJSDict . M.toList
-  readJSON o  = M.fromList <$> decJSDict "Map" o
-
-instance (JSON a) => JSON (IntMap.IntMap a) where
-  {- alternate (dict) mapping: -}
-  showJSON    = encJSDict . IntMap.toList
-  readJSON o  = IntMap.fromList <$> decJSDict "IntMap" o
-#endif
 
 
 instance (Ord a, JSON a) => JSON (Set.Set a) where
@@ -449,7 +443,7 @@ class JSKey a where
   fromJSKey :: String -> Maybe a
 
 instance JSKey JSString where
-  toJSKey x   = fromJSString x
+  toJSKey = fromJSString
   fromJSKey x = Just (toJSString x)
 
 instance JSKey Int where

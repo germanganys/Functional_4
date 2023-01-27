@@ -3,14 +3,12 @@ module Main where
 
 import Text.JSON
 
-import Parallel
-
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.IntMap as IntMap
 import qualified Data.IntSet as IntSet
 
-import qualified Control.Exception as C (catch,evaluate)
+import qualified Control.Exception as C (catch, evaluate)
 import Control.Monad
 import Foreign
 import System.Environment
@@ -20,6 +18,8 @@ import Data.Word
 import Data.Int
 
 import Test.QuickCheck hiding (test)
+import Test.Tasty.QuickCheck as QC
+
 import QuickCheckUtils
 import Debug.Trace
 import Text.Printf
@@ -30,163 +30,77 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.Sequence as Seq
 import qualified Data.Map as M
 import qualified Data.IntMap as I
+import Data.Time.Clock (UTCTime)
+import Test.QuickCheck.Instances.Time
+import Test.Tasty
+
 
 ------------------------------------------------------------------------
 -- low level ones:
 
 main :: IO ()
-main = do
-    hSetBuffering stdout NoBuffering
-    s <- getArgs
-    let n = if null s then 100 else read (head s)
-        k = doIt n
+main = defaultMain tests
 
-    k basics
-    k atomicCharacterTypes
-    k numbers
-    k listlikes
-    k containers
-    k sumtypes
-    k products
+tests = testGroup "Unit tests: Bidirectional Graph"
+    [
+         t $ ("Integer",     (test :: T Integer )),
+         t $ ("Int",         (test :: T Int )),
+                  t ("Word",        (test :: T Word )),
+
+        -- words
+
+         t $ ("Word8",        (test :: T Word8    )),
+         t $ ("Word16",       (test :: T Word16   )),
+         t $ ("Word32",       (test :: T Word32   )),
+
+        -- integers
+
+         t $ ("Int8",         (test :: T Int8     )),
+         t $ ("Int16",        (test :: T Int16    )),
+         t $ ("Int32",        (test :: T Int32    )),
+
+        -- rationals
+
+         t $ ("Double",         (test :: T Double)),
+         t $ ("Float",          (test :: T Float)),
 
 
-doIt n (s,x) = putStrLn (" *** " ++ s) >> pRun 2 n x
+         t $ ("String",         (test :: T JSString  )),
+         t $ ("Strict ByteString",        (test :: T S.ByteString )),
+         t $ ("Lazy ByteString",          (test :: T L.ByteString )),
+         t $ ("Char",        (test :: T Char )),
+         t $ ("UTCTime",        (test :: T UTCTime )),
+         t $ ("[()]",           (test :: T [()])),
+         t $ ("[Int]",          (test :: T [Int])),
+         t $ ("[Bool]",         (test :: T [Bool])),
+         t $ ("[Integer]",      (test :: T [Integer])),
+         t $ ("[Int]",          (test :: T [Int])),
+         t $ ("[Word]",         (test :: T [Word])),
+         t $ ("[S.ByteString]", (test :: T [S.ByteString])),
+         t $ ("[L.ByteString]", (test :: T [L.ByteString])),
+         t $ ("IntSet",         (test :: T IntSet )),
+         t $ ("Map String Int", (test :: T (M.Map String Int))),
+         t $ ("Map Int String", (test :: T (M.Map Int String)))
 
+
+    ]
+
+
+t (nm, te) = testProperty nm te
 
 type T a = a -> Property
 type B a = a -> Bool
 
-p :: Testable a => a -> Int -> IO String
-p = pNon
 
-test :: forall a. (Show a,Arbitrary a, Eq a, JSON a) => a -> Property
+test :: forall a. (Show a, Arbitrary a, Eq a, JSON a) => a -> Property
 test _ = forAll (arbitrary :: Gen a) $ \a ->
                 Ok a == decode (encode a)
 
 instance Arbitrary JSString where
     arbitrary = liftM toJSString arbitrary
-    coarbitrary = undefined
 
 instance (Ord e, Arbitrary e) => Arbitrary (JSObject e) where
     arbitrary   = do
             ks <- arbitrary
             vs <- arbitrary
             return . toJSObject . M.toList . M.fromList . zip ks $ vs
-
-    coarbitrary = undefined
-
-------------------------------------------------------------------------
-
--- tests :: [(String, Int -> IO String)]
-basics = ("Basic types",
-                [("Bool",        p (test :: T Bool ))
-                ,("()",          p (test :: T () ))
-                ]
-         )
-
-        -- atomic character types
-
-atomicCharacterTypes =
-    ("Atomic string types",
-
-    [("String",      p (test :: T JSString  ))
-    ,("Strict ByteString",       p (test :: T S.ByteString ))
-    ,("Lazy ByteString",         p (test :: T L.ByteString ))
-    ,("Char",        p (test :: T Char ))
-    ]
-    )
-
-        -- basic numeric types
-numbers =
-    ("Numeric types",
-        [("Integer",     p (test :: T Integer ))
-        ,("Int",         p (test :: T Int ))
-        ,("Word",        p (test :: T Word ))
-
-        -- words
-
-        ,("Word8",        p (test :: T Word8    ))
-        ,("Word16",       p (test :: T Word16   ))
-        ,("Word32",       p (test :: T Word32   ))
-        ,("Word64",       p (test :: T Word64   ))
-
-        -- integers
-
-        ,("Int8",         p (test :: T Int8     ))
-        ,("Int16",        p (test :: T Int16    ))
-        ,("Int32",        p (test :: T Int32    ))
-        ,("Int64",        p (test :: T Int64    ))
-
-        -- rationals
-
-        ,("Double",         p (test :: T Double))
-        ,("Float",          p (test :: T Float))
-    ])
-
-        -- lists
-
-listlikes =
-    ("List like types",
-        [("[()]",           p (test :: T [()]))
-        ,("[Int]",          p (test :: T [Int]))
-        ,("[Bool]",         p (test :: T [Bool]))
-        ,("[Integer]",      p (test :: T [Integer]))
-        ,("[Int]",          p (test :: T [Int]))
-        ,("[Word]",         p (test :: T [Word]))
-        ,("[S.ByteString]", p (test :: T [S.ByteString]               ))
-        ,("[L.ByteString]", p (test :: T [L.ByteString]               ))
-
-    ])
-        -- containers
-
-containers =
-    ("Container types",
-        [("IntSet",         p (test :: T IntSet ))
-        ,("Map String Int", p (test :: T (M.Map String Int)      ))
-        ,("Map Int String", p (test :: T (M.Map Int String)      ))
-
---      ,("Maybe Bool",  p (test :: T (Maybe Bool) ))
---      ,("Rational",   p (test :: T Rational ))
-
-        ]
-    )
-
-sumtypes =
-    ("Sum types",
-        [("Ordering",         p (test :: T Ordering))
-        ,("Maybe Int",        p (test :: T (Maybe Int)))
-        ,("Maybe String",        p (test :: T (Maybe String)))
-        ,("Either Bool String",        p (test :: T (Either Bool String)))
-        ,("Either Int (Either Int Word32)",
-                    p (test :: T (Either Int (Either Int Word32))))
-    ])
-
-products =
-    ("Products",
-        [("((),())",
-            p (test :: T ((),())
-         ))
-
-        ,("(Bool,Int)",
-            p (test :: T (Bool,Int)
-            ))
-
-        ,("(Bool,(Int, String))",
-            p (test :: T (Bool,(Int,String))
-            ))
-
-        ,("(Maybe String,(Either Int Bool, String))",
-            p (test :: T (Bool,(Either Int Bool,String))
-            ))
-
-        ,("(Bool,Int,String)",
-            p (test :: T (Bool,Int,String)
-            ))
-
-        ,("(Bool,Int,String,Char)",
-            p (test :: T (Bool,Int,String,Char)
-            ))
-
-         ]
-
-    )

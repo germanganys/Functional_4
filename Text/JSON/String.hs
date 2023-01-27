@@ -1,22 +1,12 @@
 -- | Basic support for working with JSON values.
 
-module Text.JSON.String 
-     ( 
+module Text.JSON.String
+     (
        -- * Parsing
        --
-       GetJSON
-     , runGetJSON
 
-       -- ** Reading JSON
-     , readJSNull
-     , readJSBool
-     , readJSString
-     , readJSRational
-     , readJSArray
-     , readJSObject
-
-     , readJSValue
-     , readJSTopType
+       parseJSTopType
+     , parseJSValue
 
        -- ** Writing JSON
      , showJSNull
@@ -25,263 +15,120 @@ module Text.JSON.String
      , showJSObject
      , showJSRational
      , showJSRational'
-
      , showJSValue
      , showJSTopType
      ) where
 
-import Prelude hiding (fail)
 import Text.JSON.Types (JSValue(..),
                         JSString, toJSString, fromJSString,
                         JSObject, toJSObject, fromJSObject)
-
-import Control.Monad (liftM, ap)
-import Control.Monad.Fail (MonadFail (..))
-import Control.Applicative((<$>))
-import qualified Control.Applicative as A
-import Data.Char (isSpace, isDigit, digitToInt)
-import Data.Ratio (numerator, denominator, (%))
-import Numeric (readHex, readDec, showHex)
+import Prelude hiding (quot)
+import Data.Ratio (numerator, denominator)
+import Numeric (showHex)
+import Text.ParserCombinators.Parsec hiding (label, tab)
 
 -- -----------------------------------------------------------------
 -- | Parsing JSON
 
--- | The type of JSON parsers for String
-newtype GetJSON a = GetJSON { un :: String -> Either String (a,String) }
-
-instance Functor GetJSON where fmap = liftM
-instance A.Applicative GetJSON where
-  pure  = return
-  (<*>) = ap
-
-instance Monad GetJSON where
-  return x        = GetJSON (\s -> Right (x,s))
-  GetJSON m >>= f = GetJSON (\s -> case m s of
-                                     Left err -> Left err
-                                     Right (a,s1) -> un (f a) s1)
-
-instance MonadFail GetJSON where
-  fail x          = GetJSON (\_ -> Left x)
-
--- | Run a JSON reader on an input String, returning some Haskell value.
--- All input will be consumed.
-runGetJSON :: GetJSON a -> String -> Either String a
-runGetJSON (GetJSON m) s = case m s of
-     Left err    -> Left err
-     Right (a,t) -> case t of
-                        [] -> Right a
-                        _  -> Left $ "Invalid tokens at end of JSON string: "++ show (take 10 t)
-
-getInput   :: GetJSON String
-getInput    = GetJSON (\s -> Right (s,s))
-
-setInput   :: String -> GetJSON ()
-setInput s  = GetJSON (\_ -> Right ((),s))
-
--------------------------------------------------------------------------
-
--- | Find 8 chars context, for error messages
-context :: String -> String
-context s = take 8 s
-
--- | Read the JSON null type
-readJSNull :: GetJSON JSValue
-readJSNull = do
-  xs <- getInput
-  case xs of
-    'n':'u':'l':'l':xs1 -> setInput xs1 >> return JSNull
-    _ -> fail $ "Unable to parse JSON null: " ++ context xs
-
-tryJSNull :: GetJSON JSValue -> GetJSON JSValue
-tryJSNull k = do
-  xs <- getInput
-  case xs of
-    'n':'u':'l':'l':xs1 -> setInput xs1 >> return JSNull
-    _ -> k 
-
--- | Read the JSON Bool type
-readJSBool :: GetJSON JSValue
-readJSBool = do
-  xs <- getInput
-  case xs of
-    't':'r':'u':'e':xs1 -> setInput xs1 >> return (JSBool True)
-    'f':'a':'l':'s':'e':xs1 -> setInput xs1 >> return (JSBool False)
-    _ -> fail $ "Unable to parse JSON Bool: " ++ context xs
-
--- | Read the JSON String type
-readJSString :: GetJSON JSValue
-readJSString = do
-  x <- getInput
-  case x of
-       '"' : cs -> parse [] cs
-       _        -> fail $ "Malformed JSON: expecting string: " ++ context x
- where 
-  parse rs cs = 
-    case cs of
-      '\\' : c : ds -> esc rs c ds
-      '"'  : ds     -> do setInput ds
-                          return (JSString (toJSString (reverse rs)))
-      c    : ds
-       | c >= '\x20' && c <= '\xff'    -> parse (c:rs) ds
-       | c < '\x20'     -> fail $ "Illegal unescaped character in string: " ++ context cs
-       | i <= 0x10ffff  -> parse (c:rs) ds
-       | otherwise -> fail $ "Illegal unescaped character in string: " ++ context cs
-       where
-        i = (fromIntegral (fromEnum c) :: Integer)
-      _ -> fail $ "Unable to parse JSON String: unterminated String: " ++ context cs
-
-  esc rs c cs = case c of
-   '\\' -> parse ('\\' : rs) cs
-   '"'  -> parse ('"'  : rs) cs
-   'n'  -> parse ('\n' : rs) cs
-   'r'  -> parse ('\r' : rs) cs
-   't'  -> parse ('\t' : rs) cs
-   'f'  -> parse ('\f' : rs) cs
-   'b'  -> parse ('\b' : rs) cs
-   '/'  -> parse ('/'  : rs) cs
-   'u'  -> case cs of
-             d1 : d2 : d3 : d4 : cs' ->
-               case readHex [d1,d2,d3,d4] of
-                 [(n,"")] -> parse (toEnum n : rs) cs'
-
-                 x -> fail $ "Unable to parse JSON String: invalid hex: " ++ context (show x)
-             _ -> fail $ "Unable to parse JSON String: invalid hex: " ++ context cs
-   _ ->  fail $ "Unable to parse JSON String: invalid escape char: " ++ show c
-
-
--- | Read an Integer or Double in JSON format, returning a Rational
-readJSRational :: GetJSON Rational
-readJSRational = do
-  cs <- getInput
-  case cs of
-    '-' : ds -> negate <$> pos ds
-    _        -> pos cs
-
-  where 
-   pos []     = fail $ "Unable to parse JSON Rational: " ++ context []
-   pos (c:cs) =
-     case c of
-       '0' -> frac 0 cs
-       _ 
-        | not (isDigit c) -> fail $ "Unable to parse JSON Rational: " ++ context cs
-        | otherwise -> readDigits (digitToIntI c) cs
-
-   readDigits acc [] = frac (fromInteger acc) []
-   readDigits acc (x:xs)
-    | isDigit x = let acc' = 10*acc + digitToIntI x in 
-                      acc' `seq` readDigits acc' xs
-    | otherwise = frac (fromInteger acc) (x:xs)
-
-   frac n ('.' : ds) = 
-       case span isDigit ds of
-         ([],_) -> setInput ds >> return n
-         (as,bs) -> let x = read as :: Integer
-                        y = 10 ^ (fromIntegral (length as) :: Integer)
-                    in exponent' (n + (x % y)) bs
-   frac n cs = exponent' n cs
-
-   exponent' n (c:cs)
-    | c == 'e' || c == 'E' = (n*) <$> exp_num cs
-   exponent' n cs = setInput cs >> return n
-
-   exp_num          :: String -> GetJSON Rational
-   exp_num ('+':cs)  = exp_digs cs
-   exp_num ('-':cs)  = recip <$> exp_digs cs
-   exp_num cs        = exp_digs cs
-
-   exp_digs :: String -> GetJSON Rational
-   exp_digs cs = case readDec cs of
-       [(a,ds)] -> do setInput ds
-                      return (fromIntegral ((10::Integer) ^ (a::Integer)))
-       _        -> fail $ "Unable to parse JSON exponential: " ++ context cs
-
-   digitToIntI :: Char -> Integer
-   digitToIntI ch = fromIntegral (digitToInt ch)
-
-
--- | Read a list in JSON format
-readJSArray  :: GetJSON JSValue
-readJSArray  = readSequence '[' ']' ',' >>= return . JSArray
-
--- | Read an object in JSON format
-readJSObject :: GetJSON JSValue
-readJSObject = readAssocs '{' '}' ',' >>= return . JSObject . toJSObject
-
-
--- | Read a sequence of items
-readSequence :: Char -> Char -> Char -> GetJSON [JSValue]
-readSequence start end sep = do
-  zs <- getInput
-  case dropWhile isSpace zs of
-    c : cs | c == start ->
-        case dropWhile isSpace cs of
-            d : ds | d == end -> setInput (dropWhile isSpace ds) >> return []
-            ds                -> setInput ds >> parse []
-    _ -> fail $ "Unable to parse JSON sequence: sequence stars with invalid character: " ++ context zs
-
-  where parse rs = rs `seq` do
-          a  <- readJSValue
-          ds <- getInput
-          case dropWhile isSpace ds of
-            e : es | e == sep -> do setInput (dropWhile isSpace es)
-                                    parse (a:rs)
-                   | e == end -> do setInput (dropWhile isSpace es)
-                                    return (reverse (a:rs))
-            _ -> fail $ "Unable to parse JSON array: unterminated array: " ++ context ds
-
-
--- | Read a sequence of JSON labelled fields
-readAssocs :: Char -> Char -> Char -> GetJSON [(String,JSValue)]
-readAssocs start end sep = do
-  zs <- getInput
-  case dropWhile isSpace zs of
-    c:cs | c == start -> case dropWhile isSpace cs of
-            d:ds | d == end -> setInput (dropWhile isSpace ds) >> return []
-            ds              -> setInput ds >> parsePairs []
-    _ -> fail "Unable to parse JSON object: unterminated object"
-
-  where parsePairs rs = rs `seq` do
-          a  <- do k  <- do x <- readJSString ; case x of
-                                JSString s -> return (fromJSString s)
-                                _          -> fail $ "Malformed JSON field labels: object keys must be quoted strings."
-                   ds <- getInput
-                   case dropWhile isSpace ds of
-                       ':':es -> do setInput (dropWhile isSpace es)
-                                    v <- readJSValue
-                                    return (k,v)
-                       _      -> fail $ "Malformed JSON labelled field: " ++ context ds
-
-          ds <- getInput
-          case dropWhile isSpace ds of
-            e : es | e == sep -> do setInput (dropWhile isSpace es)
-                                    parsePairs (a:rs)
-                   | e == end -> do setInput (dropWhile isSpace es)
-                                    return (reverse (a:rs))
-            _ -> fail $ "Unable to parse JSON object: unterminated sequence: "
-                            ++ context ds
-
--- | Read one of several possible JS types
-readJSValue :: GetJSON JSValue
-readJSValue = do
-  cs <- getInput
-  case cs of
-    '"' : _ -> readJSString
-    '[' : _ -> readJSArray
-    '{' : _ -> readJSObject
-    't' : _ -> readJSBool
-    'f' : _ -> readJSBool
-    (x:_) | isDigit x || x == '-' -> JSRational False <$> readJSRational
-    xs -> tryJSNull
-             (fail $ "Malformed JSON: invalid token in this context " ++ context xs)
 
 -- | Top level JSON can only be Arrays or Objects
-readJSTopType :: GetJSON JSValue
-readJSTopType = do
-  cs <- getInput
-  case cs of
-    '[' : _ -> readJSArray
-    '{' : _ -> readJSObject
-    _       -> fail "Invalid JSON: a JSON text a serialized object or array at the top level."
+parseJSTopType :: Parser JSValue
+parseJSTopType = do
+    value <- (parseObj <|> parseArray) <* eof
+    return value
+
+parseJSValue :: Parser JSValue
+parseJSValue = do
+    parseObj <|> parseArray <|> parseBoolean <|> parseNull <|> parseJSONStr <|> parseNumber
+
+parseObj :: Parser JSValue
+parseObj = do
+    _ <- spaces *> char '{' <* spaces
+    props <- sepBy parseProps (spaces *> char ',' <* spaces)
+    _ <- spaces *> char '}' <* spaces
+    return . JSObject $ toJSObject props
+
+parseStr :: Parser String
+parseStr = p where
+    p = between (char '"') (char '"') $ many oneChar
+    oneChar = raw <|> char '\\' *> quoted
+    raw = satisfy (\ c -> c /= '"' && c /= '\\')
+    quoted = tab <|> quot <|> revsolidus <|> solidus <|> backspace <|> formfeed
+        <|> nl <|> cr <|> hexUnicode
+    tab = char 't' *> pure '\t'
+    quot = char '"' *> pure '"'
+    revsolidus = char '/' *> pure '/'
+    solidus = char '\\' *> pure '\\'
+    backspace = char 'b' *> pure '\b'
+    formfeed = char 'f' *> pure '\f'
+    nl = char 'n' *> pure '\n'
+    cr = char 'r' *> pure '\r'
+    hexUnicode = char 'u' *> count 4 hexDigit >>= decodeUtf
+    decodeUtf x = pure $ toEnum (read ('0':'x':x) :: Int)
+
+
+parseProps :: Parser (String, JSValue)
+parseProps = do
+    label <- parseLabel
+    value <- parseJSValue
+    return (label, value)
+
+parseLabel :: Parser String
+parseLabel = do
+    spaces *> parseStr <* (spaces *> char ':' <* spaces)
+
+parseNumber :: Parser JSValue
+parseNumber = do
+    number <- spaces *> baseNumber <* spaces
+    return (JSRational False (toRational number))
+
+baseNumber :: Parser Double
+baseNumber = read . concat <$> sequence
+    [ opt $ string "-"
+    , string "0" <|> many1 digit
+    , opt $ (:) <$> char '.' <*> many1 digit
+    , opt $ concat <$> sequence
+        [ string "e" <|> string "E"
+        , opt $ string "+" <|> string "-"
+        , many1 digit
+        ]
+    ]
+    where
+        opt = option ""
+
+parseJSONStr :: Parser JSValue
+parseJSONStr = do
+    str <- spaces *> parseStr <* spaces
+    return . JSString $ toJSString str
+
+parseBoolean :: Parser JSValue
+parseBoolean = do
+    bool <- spaces *> (string "true" <|> string "false") <* spaces
+    if bool == "true" then return (JSBool True) else return (JSBool False)
+
+parseNull :: Parser JSValue
+parseNull = do
+    _ <- spaces *> string "null" <* spaces
+    return JSNull
+
+
+commaSeparated :: Parser a -> Parser [a]
+commaSeparated = flip sepBy comma where
+    comma = (variant1 <|> try variant2) <* spaces
+    variant1 = char ',' <* spaces
+    variant2 = spaces *> char ','
+
+parseArray :: Parser JSValue
+parseArray = do
+    _ <- spaces *> char '[' <* spaces
+    a <- commaSeparated (parseObj
+                <|> parseArray
+                <|> parseBoolean
+                <|> parseNull
+                <|> parseJSONStr
+                <|> parseNumber)
+    _ <- spaces *> char ']' <* spaces
+    return $ JSArray a
 
 -- -----------------------------------------------------------------
 -- | Writing JSON
@@ -321,7 +168,7 @@ showJSString x xs = quote (encJSString x (quote xs))
 
 -- | Show a Rational in JSON format
 showJSRational :: Rational -> ShowS
-showJSRational r = showJSRational' False r
+showJSRational = showJSRational' False
 
 showJSRational' :: Bool -> Rational -> ShowS
 showJSRational' asFloat r 

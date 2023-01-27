@@ -1,8 +1,15 @@
 {-# LANGUAGE DeriveDataTypeable, ExtendedDefaultRules, EmptyDataDecls #-}
-module Main where
+
+module Main(main) where
+
 import Text.JSON.Generic
 import Data.Word
 import Data.Int
+import Data.Time.Clock()
+import Data.Time.Calendar
+import Data.Time
+import Text.ParserCombinators.Parsec()
+import Text.JSON.String()
 
 data Foo = Foo { a :: Int, b :: Bool, c :: Baz } | None
     deriving (Typeable, Data, Show, Eq)
@@ -22,11 +29,13 @@ newtype Apples = Apples { noApples :: Int }
 data Record = Record { x :: Int, y :: Double, z :: Float, s :: String, t :: (Bool, Int) }
     deriving (Typeable, Data, Show, Eq)
 
+rec :: Record
 rec = Record { x = 1, y = 2, z = 3.5, s = "hello", t = (True, 0) }
 
 data Tree a = Leaf | Node (Tree a) a (Tree a)
     deriving (Typeable, Data, Show, Eq)
 
+atree :: Tree Integer
 atree = build 4
   where build 0 = Leaf
         build 1 = Node Leaf 100 Leaf
@@ -35,16 +44,18 @@ atree = build 4
 data Color = Red | Green | Blue
     deriving (Typeable, Data, Show, Eq, Enum)
 
-from (Ok x) = x
-from (Error s) = error s
+newtype Times = Times (UTCTime)
+    deriving (Typeable, Data, Show, Eq)
 
-viaJSON :: (Data a) => a -> a
-viaJSON = from . fromJSON . toJSON
+from :: Result a -> a
+from (Ok xr) = xr
+from (Error es) = error es
 
 testJSON :: (Data a, Eq a) => a -> Bool
-testJSON x = --x == viaJSON x
-             x == decodeJSON (encodeJSON x)
+testJSON x1 = --x == viaJSON x
+             x1 == decodeJSON (encodeJSON x1)
 
+tests :: Bool
 tests = and [
     testJSON (1::Integer),
     testJSON (42::Int),
@@ -52,17 +63,17 @@ tests = and [
     testJSON (-1000::Int64),
     testJSON (4.2::Double),
     testJSON (4.1::Float),
-    testJSON True,
+    testJSON (True::Bool),
     testJSON 'q',
     testJSON "Hello, World\n",
     testJSON (Nothing :: Maybe Int),
     testJSON (Just "aa"),
     testJSON [],
-    testJSON [1,2,3,4],
+    testJSON ([1,2,3,4]::[Integer]),
     testJSON (Left 1 :: Either Int Bool),
     testJSON (Right True :: Either Int Bool),
-    testJSON (1,True),
-    testJSON (1,2,True,'a',"apa",(4.5,99)),
+    testJSON (1::Integer, True),
+    testJSON (1::Integer, 2::Integer, True, 'a'::Char, "apa"::String, (4.5::Double, 99::Integer)),
     testJSON $ Baz 11,
     testJSON $ Foo 1 True (Baz 42),
     testJSON None,
@@ -74,8 +85,12 @@ tests = and [
     testJSON atree,
     testJSON (),
     testJSON $ Apples 42,
-    testJSON [Red .. Blue]
+    testJSON [Red .. Blue],
+    testJSON $ Times (UTCTime (fromGregorian 2025 1 27) (secondsToDiffTime 0))
     ]
 
 main :: IO ()
-main = if tests then return () else error "Generic test failed"
+main = if tests then
+           return ()
+      else
+           error "Generic test failed"

@@ -11,7 +11,7 @@ import qualified Data.Map as M
 isError (Error _) = True
 isError _        = False
 
-
+main :: IO ()
 main = do counts <- runTestTT tests
           when (errors counts > 0 || failures counts > 0) exitFailure
 
@@ -57,25 +57,24 @@ tests = TestList
 
 ------------------------------------------------------------------------
 
-load n = readFile ("unit/" ++ n ++ ".json")
+load n = readFile ("./tests/unit/" ++ n ++ ".json")
 
 shouldFail :: JSON a => String -> String -> a -> Test
-shouldFail  s n (x :: a) = TestLabel ("Should fail: " ++ s) $
+shouldFail comment filename (x :: a) = TestLabel ("Should fail: " ++ comment) $
   TestCase $ do
---  hPutStrLn stderr $ ("\t\tShould fail: " ++ s)
-    s <- load n
+    s <- load filename
     assert =<< case decodeStrict s :: Result a of
-                    Ok _     -> return False
-                    Error  s -> -- do hPrint stderr s
+                    Ok res     -> do hPrint stderr (show $ showJSON res)
+                                     return False
+                    Error s ->  -- do hPrint stderr (show s)
                                    return True
 
 
 shouldPass :: JSON a => String -> String -> a -> Test
-shouldPass  s n (x :: a) = TestLabel ("Should pass: " ++ s) $
+shouldPass  comment filename (x :: a) = TestLabel ("Should pass: " ++ comment) $
   TestCase $ do
---  hPutStrLn stderr $ ("\t\tShould pass: " ++ s)
-    s <- load n
-    assert =<< case decodeStrict s :: Result a of
+    ss <- load filename
+    assert =<< case decodeStrict ss :: Result a of
                     Ok _     -> return True
                     Error  s -> do hPrint stderr s
                                    return False
