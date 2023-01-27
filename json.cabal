@@ -69,6 +69,9 @@ library
                    Text.JSON.Generic
   ghc-options:     -Wall
 
+  hs-source-dirs:
+      src
+
   build-depends:    base >=4.9 && <5, syb >= 0.3.3
                     , array
                     , containers
