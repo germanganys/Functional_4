@@ -32,8 +32,6 @@ jobs:
           ${{ runner.os }}-build-${{ env.cache-name }}-
           ${{ runner.os }}-build-
           ${{ runner.os }}-
-    - name: Run Fourmolu
-      uses: fourmolu/fourmolu-action@v2
 
     - name: Install dependencies
       run: |
@@ -43,3 +41,7 @@ jobs:
       run: cabal build --enable-tests --enable-benchmarks all
     - name: Run tests
       run: cabal test all
+
+    - name: Run Fourmolu
+      uses: fourmolu/fourmolu-action@v2
+
