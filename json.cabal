@@ -84,9 +84,64 @@ library
                     , time
 
 
-test-suite json-test
+test-suite json-test-qc
   type: exitcode-stdio-1.0
-  main-is: Spec.hs
+  main-is: QC.hs
+
+  hs-source-dirs:
+      tests
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , parsec
+    , array
+    , base >=4.7 && <5
+    , containers
+    , json
+    , bytestring
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
+    , tasty-smallcheck
+    , test-framework
+    , test-framework-hunit
+    , QuickCheck
+    , random
+    , time
+    , quickcheck-instances
+  default-language: Haskell2010
+
+
+test-suite json-test-hunit
+  type: exitcode-stdio-1.0
+  main-is: HUnit.hs
+
+  hs-source-dirs:
+      tests
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , parsec
+    , array
+    , base >=4.7 && <5
+    , containers
+    , json
+    , bytestring
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
+    , tasty-smallcheck
+    , test-framework
+    , test-framework-hunit
+    , QuickCheck
+    , random
+    , time
+    , quickcheck-instances
+  default-language: Haskell2010
+
+test-suite json-test-generic
+  type: exitcode-stdio-1.0
+  main-is: GenericTest.hs
 
   hs-source-dirs:
       tests
