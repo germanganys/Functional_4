@@ -23,9 +23,7 @@ extra-source-files:
     tests/GenericTest.hs
     tests/HUnit.hs
     tests/Makefile
-    tests/Parallel.hs
     tests/QC.hs
-    tests/QuickCheckUtils.hs
     tests/Unit.hs
     tests/unit/fail1.json
     tests/unit/fail10.json

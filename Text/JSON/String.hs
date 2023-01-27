@@ -39,9 +39,7 @@ import Prelude hiding (quot)
 
 -- | Top level JSON can only be Arrays or Objects
 parseJSTopType :: Parser JSValue
-parseJSTopType = do
-  value <- (parseObj <|> parseArray) <* eof
-  return value
+parseJSTopType = do (parseObj <|> parseArray) <* eof
 
 parseJSValue :: Parser JSValue
 parseJSValue = do

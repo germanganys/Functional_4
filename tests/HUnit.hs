@@ -58,23 +58,17 @@ tests =
 load n = readFile ("./tests/unit/" ++ n ++ ".json")
 
 shouldFail :: JSON a => String -> String -> a -> Test
-shouldFail comment filename (x :: a) = TestLabel ("Should fail: " ++ comment) $
+shouldFail comment filename (_ :: a) = TestLabel ("Should fail: " ++ comment) $
   TestCase $ do
     s <- load filename
     assert =<< case decodeStrict s :: Result a of
-      Ok res -> do
-        hPrint stderr (show $ showJSON res)
-        return False
-      Error s ->
-        -- do hPrint stderr (show s)
-        return True
+      Ok _ -> do return False
+      Error _ -> return True
 
 shouldPass :: JSON a => String -> String -> a -> Test
-shouldPass comment filename (x :: a) = TestLabel ("Should pass: " ++ comment) $
+shouldPass comment filename (_ :: a) = TestLabel ("Should pass: " ++ comment) $
   TestCase $ do
     ss <- load filename
     assert =<< case decodeStrict ss :: Result a of
       Ok _ -> return True
-      Error s -> do
-        hPrint stderr s
-        return False
+      Error _ -> do return False

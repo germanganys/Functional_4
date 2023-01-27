@@ -19,7 +19,6 @@ import Data.Time.Clock (UTCTime)
 import Data.Word
 import Debug.Trace
 import Foreign
-import QuickCheckUtils
 import System.Environment
 import System.IO
 import System.IO.Unsafe
@@ -92,3 +91,10 @@ instance (Ord e, Arbitrary e) => Arbitrary (JSObject e) where
     ks <- arbitrary
     vs <- arbitrary
     return . toJSObject . M.toList . M.fromList . zip ks $ vs
+
+
+instance Arbitrary L.ByteString where
+  arbitrary = arbitrary >>= return . L.fromChunks . filter (not . S.null) -- maintain the invariant.
+
+instance Arbitrary S.ByteString where
+  arbitrary = S.pack `fmap` arbitrary

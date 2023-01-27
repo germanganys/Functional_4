@@ -74,7 +74,7 @@ toJSONGeneric = generic
         AlgRep [] -> JSNull
         AlgRep [c] -> encodeArgs c (toJSON `gmapQ` a)
         AlgRep _ -> encodeConstr (toConstr a) (toJSON `gmapQ` a)
-        rep -> error $ "toJSON: not AlgRep " ++ show rep ++ "(" ++ show ((dataTypeOf a)) ++ ")"
+        rep -> error $ "toJSON: not AlgRep " ++ show rep ++ "(" ++ show (dataTypeOf a) ++ ")"
 
     -- Encode nullary constructor as a string.
     -- Encode non-nullary constructors as an object with the constructor
