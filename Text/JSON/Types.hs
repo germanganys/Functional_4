@@ -1,35 +1,33 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 
 -- | Basic support for working with JSON values.
-module Text.JSON.Types
-  ( -- * JSON Types
+module Text.JSON.Types(
+    -- * JSON Types
     JSValue (..),
-
     -- * Wrapper Types
-    JSString {-fromJSString-} (..),
+    JSString (..),
     toJSString,
-    JSObject {-fromJSObject-} (..),
+    JSObject (..),
     toJSObject,
     getField,
     setField,
-  )
-where
+) where
 
 import Data.String (IsString (..))
 import Data.Typeable (Typeable)
 
 data JSValue
-  = JSNull
-  | JSBool !Bool
-  | JSRational Bool !Rational
-  | JSString JSString
-  | JSArray [JSValue]
-  | JSObject (JSObject JSValue)
-  deriving (Show, Read, Eq, Ord, Typeable)
+    = JSNull
+    | JSBool !Bool
+    | JSRational Bool !Rational
+    | JSString JSString
+    | JSArray [JSValue]
+    | JSObject (JSObject JSValue)
+    deriving (Show, Read, Eq, Ord, Typeable)
 
 -- | Strings can be represented a little more efficiently in JSON
 newtype JSString = JSONString {fromJSString :: String}
-  deriving (Eq, Ord, Show, Read, Typeable)
+    deriving (Eq, Ord, Show, Read, Typeable)
 
 -- | Turn a Haskell string into a JSON string.
 toJSString :: String -> JSString
@@ -38,14 +36,14 @@ toJSString = JSONString
 -- Note: we don't encode the string yet, that's done when serializing.
 
 instance IsString JSString where
-  fromString = toJSString
+    fromString = toJSString
 
 instance IsString JSValue where
-  fromString = JSString . fromString
+    fromString = JSString . fromString
 
 -- | As can association lists
 newtype JSObject e = JSONObject {fromJSObject :: [(String, e)]}
-  deriving (Eq, Ord, Show, Read, Typeable)
+    deriving (Eq, Ord, Show, Read, Typeable)
 
 -- | Make JSON object out of an association list.
 toJSObject :: [(String, a)] -> JSObject a

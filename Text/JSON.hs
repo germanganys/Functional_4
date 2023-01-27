@@ -1,20 +1,17 @@
 {-# LANGUAGE FlexibleInstances #-}
 
 -- | Serialising Haskell values to and from JSON values.
-module Text.JSON
-  ( -- * JSON Types
+module Text.JSON(
+    -- * JSON Types
     JSValue (..),
-
     -- * Serialization to and from JSValues
     JSON (..),
-
     -- * Encoding and Decoding
     Result (..),
     encode, -- :: JSON a => a -> String
     decode, -- :: JSON a => String -> Either String a
     encodeStrict, -- :: JSON a => a -> String
     decodeStrict, -- :: JSON a => String -> Either String a
-
     -- * Wrapper Types
     JSString,
     toJSString,
@@ -23,7 +20,6 @@ module Text.JSON
     toJSObject,
     fromJSObject,
     resultToEither,
-
     -- ** Writing JSON
     showJSNull,
     showJSBool,
@@ -32,15 +28,13 @@ module Text.JSON
     showJSRational',
     showJSObject,
     showJSValue,
-
     -- ** Instance helpers
     makeObj,
     valFromObj,
     JSKey (..),
     encJSDict,
     decJSDict,
-  )
-where
+) where
 
 import Control.Applicative
 import Control.Monad (MonadPlus (..), ap, liftM)
@@ -59,8 +53,8 @@ import Data.Time.Format.ISO8601
 import Data.Word
 import Text.JSON.String
 import Text.JSON.Types
-import Text.Parsec.Error ()
-import Text.ParserCombinators.Parsec hiding (getInput, setInput)
+import Text.Parsec.Error()
+import Text.ParserCombinators.Parsec
 
 ------------------------------------------------------------------------
 
