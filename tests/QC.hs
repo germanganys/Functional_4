@@ -1,16 +1,15 @@
-{-# OPTIONS_GHC -fglasgow-exts #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Main where
+module Main (main) where
 
 import qualified Data.Map as M
-import Test.Tasty ( defaultMain, testGroup, TestName, TestTree )
+import Test.Tasty ( defaultMain, testGroup, TestTree )
 import Test.Tasty.QuickCheck as QC
     ( Arbitrary(arbitrary),
       Gen,
       forAll,
       testProperty,
-      Property,
-      Testable )
+      Property )
 import Text.SimpleJSON
     ( JSObject,
       JSString,
@@ -28,22 +27,19 @@ tests :: TestTree
 tests =
     testGroup
         "Unit tests: json serialize - deserialize"
-        [ t ("Integer", test :: T Integer),
-          t ("Int", test :: T Int),
-          t ("Double", test :: T Double),
-          t ("Float", test :: T Float),
-          t ("String", test :: T JSString),
-          t ("Char", test :: T Char),
-          t ("[Int]", test :: T [Int]),
-          t ("[Bool]", test :: T [Bool]),
-          t ("[Integer]", test :: T [Integer]),
-          t ("[Int]", test :: T [Int])
+        [ testProperty "Integer" (test :: T Integer),
+          testProperty "Int" (test :: T Int),
+          testProperty "Double" (test :: T Double),
+          testProperty "Float" (test :: T Float),
+          testProperty "String" (test :: T JSString),
+          testProperty "Char" (test :: T Char),
+          testProperty "[Int]" (test :: T [Int]),
+          testProperty "[Bool]" (test :: T [Bool]),
+          testProperty "[Integer]" (test :: T [Integer]),
+          testProperty "[Int]" (test :: T [Int])
          ]
 
-t (nm, te) = testProperty nm te
-
 type T a = a -> Property
-type B a = a -> Bool
 
 test :: forall a. (Show a, Arbitrary a, Eq a, JSON a) => a -> Property
 test _ = forAll (arbitrary :: Gen a) $ \a ->
