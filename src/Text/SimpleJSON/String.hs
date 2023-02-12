@@ -1,23 +1,16 @@
--- | Basic support for working with JSON values.
-module Text.JSON.String(
-    -- * Parsing
-    parseJSTopType,
-    parseJSValue,
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE InstanceSigs #-}
 
-    -- ** Writing JSON
-    showJSNull,
-    showJSBool,
-    showJSArray,
+module Text.SimpleJSON.String(
+    parseJSValue,
     showJSObject,
-    showJSRational,
-    showJSRational',
     showJSValue,
-    showJSTopType
+    StringRepresentable (..),
 ) where
 
 import Data.Ratio (denominator, numerator)
 import Numeric (showHex)
-import Text.JSON.Types(
+import Text.SimpleJSON.Types(
     JSObject,
     JSString,
     JSValue (..),
@@ -26,26 +19,64 @@ import Text.JSON.Types(
     toJSObject,
     toJSString
  )
-import Text.ParserCombinators.Parsec hiding (label, tab)
+import Text.ParserCombinators.Parsec
+    ( char,
+      digit,
+      hexDigit,
+      satisfy,
+      spaces,
+      string,
+      between,
+      count,
+      many1,
+      option,
+      sepBy,
+      (<|>),
+      many,
+      try,
+      Parser )
 import Prelude hiding (quot)
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as LazyT
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as LazyB
+import Data.Text.Encoding (decodeUtf8)
 
--- -----------------------------------------------------------------
+class StringRepresentable a where
+    toString :: a -> String
 
--- | Parsing JSON
+instance StringRepresentable String where toString :: String -> String
+                                          toString = id
 
--- | Top level JSON can only be Arrays or Objects
-parseJSTopType :: Parser JSValue
-parseJSTopType = do (parseObj <|> parseArray) <* eof
+instance StringRepresentable T.Text where toString :: T.Text -> String
+                                          toString = T.unpack
+
+instance StringRepresentable LazyT.Text where toString :: LazyT.Text -> String
+                                              toString = LazyT.unpack
+
+instance StringRepresentable B.ByteString where toString :: B.ByteString -> String
+                                                toString = T.unpack . decodeUtf8
+
+instance StringRepresentable LazyB.ByteString where toString :: LazyB.ByteString -> String
+                                                    toString = T.unpack . decodeUtf8 . LazyB.toStrict
+
 
 parseJSValue :: Parser JSValue
-parseJSValue = do parseObj <|> parseArray <|> parseBoolean <|> parseNull <|> parseJSONStr <|> parseNumber
+parseJSValue = do
+    parseObj <|> parseArray <|> parseBoolean <|> parseNull <|> parseJSONStr <|> parseNumber
 
 parseObj :: Parser JSValue
 parseObj = do
     _ <- spaces *> char '{' <* spaces
-    props <- sepBy parseProps (spaces *> char ',' <* spaces)
+    props <- sepBy parseKV (spaces *> char ',' <* spaces)
     _ <- spaces *> char '}' <* spaces
     return . JSObject $ toJSObject props
+
+parseKV :: Parser (String, JSValue)
+parseKV = do
+    key <- parseLabel
+    value <- parseJSValue
+    return (key, value)
 
 parseStr :: Parser String
 parseStr = p
@@ -66,19 +97,13 @@ parseStr = p
         hexUnicode = char 'u' *> count 4 hexDigit >>= decodeUtf
         decodeUtf x = pure $ toEnum (read ('0' : 'x' : x) :: Int)
 
-parseProps :: Parser (String, JSValue)
-parseProps = do
-    label <- parseLabel
-    value <- parseJSValue
-    return (label, value)
-
 parseLabel :: Parser String
 parseLabel = do spaces *> parseStr <* (spaces *> char ':' <* spaces)
 
 parseNumber :: Parser JSValue
 parseNumber = do
     number <- spaces *> baseNumber <* spaces
-    return (JSRational False (toRational number))
+    return (JSRational (toRational number))
 
 baseNumber :: Parser Double
 baseNumber =
@@ -120,69 +145,41 @@ parseArray = do
     _ <- spaces *> char ']' <* spaces
     return $ JSArray a
 
--- -----------------------------------------------------------------
-
--- | Writing JSON
-
--- | Show strict JSON top level types. Values not permitted
--- at the top level are wrapped in a singleton array.
-showJSTopType :: JSValue -> ShowS
-showJSTopType (JSArray a) = showJSArray a
-showJSTopType (JSObject o) = showJSObject o
-showJSTopType x = showJSTopType $ JSArray [x]
-
--- | Show JSON values
 showJSValue :: JSValue -> ShowS
 showJSValue jv =
     case jv of
         JSNull {} -> showJSNull
         JSBool b -> showJSBool b
-        JSRational asF r -> showJSRational' asF r
+        JSRational r -> showJSRational r
         JSArray a -> showJSArray a
         JSString s -> showJSString s
         JSObject o -> showJSObject o
 
--- | Write the JSON null type
 showJSNull :: ShowS
 showJSNull = showString "null"
 
--- | Write the JSON Bool type
 showJSBool :: Bool -> ShowS
 showJSBool True = showString "true"
 showJSBool False = showString "false"
 
--- | Write the JSON String type
 showJSString :: JSString -> ShowS
-showJSString x xs = quote (encJSString x (quote xs))
-    where
-        quote = showChar '"'
+showJSString x xs = showChar '"' (encJSString x (showChar '"' xs))
 
--- | Show a Rational in JSON format
 showJSRational :: Rational -> ShowS
-showJSRational = showJSRational' False
-
-showJSRational' :: Bool -> Rational -> ShowS
-showJSRational' asFloat r
+showJSRational r
     | denominator r == 1 = shows $ numerator r
     | isInfinite x || isNaN x = showJSNull
-    | asFloat = shows xf
     | otherwise = shows x
     where
         x :: Double
         x = realToFrac r
 
-        xf :: Float
-        xf = realToFrac r
-
--- | Show a list in JSON format
 showJSArray :: [JSValue] -> ShowS
 showJSArray = showSequence '[' ']' ','
 
--- | Show an association list in JSON format
 showJSObject :: JSObject JSValue -> ShowS
 showJSObject = showAssocs '{' '}' ',' . fromJSObject
 
--- | Show a generic sequence of pairs in JSON format
 showAssocs :: Char -> Char -> Char -> [(String, JSValue)] -> ShowS
 showAssocs start end sep xs rest = start : go xs
   where
@@ -198,7 +195,6 @@ showAssocs start end sep xs rest = start : go xs
           ('"' : ':' : showJSValue v (sep : go kvs))
     go [] = end : rest
 
--- | Show a generic sequence in JSON format
 showSequence :: Char -> Char -> Char -> [JSValue] -> ShowS
 showSequence start end sep xs rest = start : go xs
     where

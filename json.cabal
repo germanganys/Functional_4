@@ -63,10 +63,10 @@ extra-source-files:
     tests/unit/pass3.json
 
 library
-  exposed-modules: Text.JSON,
-                   Text.JSON.Types,
-                   Text.JSON.String,
-                   Text.JSON.Generic
+  exposed-modules: Text.SimpleJSON,
+                   Text.SimpleJSON.Types,
+                   Text.SimpleJSON.String,
+                   Text.SimpleJSON.Generic
   ghc-options:     -Wall
 
   hs-source-dirs:

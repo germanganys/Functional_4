@@ -1,11 +1,8 @@
 {-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE Rank2Types #-}
 
--- | JSON serializer and deserializer using Data.Generics.
--- The functions here handle algebraic data types and primitive types.
--- It uses the same representation as "Text.JSON" for "Prelude" types.
-module Text.JSON.Generic(
-    module Text.JSON,
+module Text.SimpleJSON.Generic(
+    module Text.SimpleJSON,
     Data,
     Typeable,
     toJSON,
@@ -15,59 +12,50 @@ module Text.JSON.Generic(
 ) where
 
 import Control.Monad.State
-import qualified Data.ByteString.Char8 as S
-import qualified Data.ByteString.Lazy.Char8 as L
+    ( MonadTrans(lift),
+      MonadState(put, get),
+      modify,
+      evalStateT,
+      execState,
+      StateT )
 import Data.Generics
-import Data.Int
-import qualified Data.IntSet as I
-import Data.Time.Clock (UTCTime)
-import Data.Word
-import Text.JSON
-import Text.JSON.String (parseJSValue)
+    ( Data(toConstr, gmapQ, dataTypeOf),
+      Typeable,
+      DataRep(AlgRep),
+      Constr,
+      constrFields,
+      dataTypeRep,
+      fromConstrM,
+      indexConstr,
+      readConstr,
+      showConstr,
+      ext1Q,
+      ext1R,
+      extQ,
+      extR )
+import Text.SimpleJSON
+import Text.SimpleJSON.String (parseJSValue)
 import Text.ParserCombinators.Parsec (parse)
 
 type T a = a -> JSValue
 
--- | Convert anything to a JSON value.
 toJSON :: (Data a) => a -> JSValue
 toJSON =
-    toJSONGeneric
+        toJSONGeneric
         `ext1Q` jList
         `extQ` (showJSON :: T Integer)
         `extQ` (showJSON :: T Int)
-        `extQ` (showJSON :: T Word8)
-        `extQ` (showJSON :: T Word16)
-        `extQ` (showJSON :: T Word32)
-        `extQ` (showJSON :: T Word64)
-        `extQ` (showJSON :: T Int8)
-        `extQ` (showJSON :: T Int16)
-        `extQ` (showJSON :: T Int32)
-        `extQ` (showJSON :: T Int64)
         `extQ` (showJSON :: T Double)
         `extQ` (showJSON :: T Float)
         `extQ` (showJSON :: T Char)
         `extQ` (showJSON :: T String)
-        -- Bool has a special encoding.
         `extQ` (showJSON :: T Bool)
-        `extQ` (showJSON :: T ())
-        `extQ` (showJSON :: T Ordering)
-        -- More special cases.
-       `extQ` (showJSON :: T I.IntSet)
-       `extQ` (showJSON :: T UTCTime)
-       `extQ` (showJSON :: T S.ByteString)
-       `extQ` (showJSON :: T L.ByteString)
     where
-        -- Lists are simply coded as arrays.
         jList vs = JSArray $ map toJSON vs
 
 toJSONGeneric :: (Data a) => a -> JSValue
 toJSONGeneric = generic
     where
-        -- Generic encoding of an algebraic data type.
-        --   No constructor, so it must be an error value.  Code it anyway as JSNull.
-        --   Elide a single constructor and just code the arguments.
-        --   For multiple constructors, make an object with a field name that is the
-        --   constructor (except lower case) and the data is the arguments encoded.
         generic a =
             case dataTypeRep (dataTypeOf a) of
                 AlgRep [] -> JSNull
@@ -75,55 +63,28 @@ toJSONGeneric = generic
                 AlgRep _ -> encodeConstr (toConstr a) (toJSON `gmapQ` a)
                 rep -> error $ "toJSON: not AlgRep " ++ show rep ++ "(" ++ show (dataTypeOf a) ++ ")"
 
-        -- Encode nullary constructor as a string.
-        -- Encode non-nullary constructors as an object with the constructor
-        -- name as the single field and the arguments as the value.
-        -- Use an array if the are no field names, but elide singleton arrays,
-        -- and use an object if there are field names.
         encodeConstr constr [] = JSString $ toJSString $ showConstr constr
-        encodeConstr constr argList = jsObject [(showConstr constr, encodeArgs constr argList)]
+        encodeConstr constr argList = makeObj [(showConstr constr, encodeArgs constr argList)]
 
-        encodeArgs constr argList = encodeArgs' (constrFields constr) argList
+        encodeArgs constr = encodeArgs' (constrFields constr)
             where
                 encodeArgs' [] [j] = j
                 encodeArgs' [] js = JSArray js
-                encodeArgs' ns js = jsObject $ zip (map mungeField ns) js
-
-        -- Skip leading '_' in field name so we can use keywords etc. as field names.
-        mungeField ('_' : cs) = cs
-        mungeField cs = cs
-
-        jsObject :: [(String, JSValue)] -> JSValue
-        jsObject = JSObject . toJSObject
+                encodeArgs' ns js = makeObj $ zip ns js
 
 type F a = Result a
 
--- | Convert a JSON value to anything (fails if the types do not match).
 fromJSON :: (Data a) => JSValue -> Result a
 fromJSON j =
     fromJSONGeneric j
         `ext1R` jList
         `extR` (value :: F Integer)
         `extR` (value :: F Int)
-        `extR` (value :: F Word8)
-        `extR` (value :: F Word16)
-        `extR` (value :: F Word32)
-        `extR` (value :: F Word64)
-        `extR` (value :: F Int8)
-        `extR` (value :: F Int16)
-        `extR` (value :: F Int32)
-        `extR` (value :: F Int64)
         `extR` (value :: F Double)
         `extR` (value :: F Float)
         `extR` (value :: F Char)
         `extR` (value :: F String)
         `extR` (value :: F Bool)
-        `extR` (value :: F ())
-        `extR` (value :: F Ordering)
-        `extR` (value :: F I.IntSet)
-        `extR` (value :: F S.ByteString)
-        `extR` (value :: F L.ByteString)
-        `extR` (value :: F UTCTime)
     where
         value :: (JSON a) => Result a
         value = readJSON j
@@ -157,18 +118,15 @@ fromJSONGeneric j = generic
         decodeArgs' _ c fs@(_ : _) (JSObject o) = selectFields (fromJSObject o) fs >>= construct c -- field names
         decodeArgs' _ c _ jd = Error $ "fromJSON: bad decodeArgs data " ++ show (c, jd)
 
-        -- Build the value by stepping through the list of subparts.
         construct c = evalStateT $ fromConstrM f c
             where
                 f :: (Data a) => StateT [JSValue] Result a
                 f = do js <- get; case js of { [] -> lift $ Error "construct: empty list"; j' : js' -> do { put js'; lift $ fromJSON j' } }
 
-        -- Select the named fields from a JSON object.  FIXME? Should this use a map?
         selectFields fjs = mapM sel
             where
                 sel f = maybe (Error $ "fromJSON: field does not exist " ++ f) Ok $ lookup f fjs
 
-        -- Count how many arguments a constructor has.  The value x is used to determine what type the constructor returns.
         numConstrArgs :: (Data a) => a -> Constr -> Int
         numConstrArgs x c = execState (fromConstrM f c `asTypeOf` return x) 0
             where
