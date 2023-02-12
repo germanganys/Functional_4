@@ -40,7 +40,6 @@ tests =
           t ("[Int]", test :: T [Int])
          ]
 
-t :: forall {a}. Testable a => (TestName, a) -> TestTree
 t (nm, te) = testProperty nm te
 
 type T a = a -> Property
