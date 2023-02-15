@@ -84,7 +84,7 @@ instance JSON JSString where
     readJSON _ = Error "Unable to read JSString"
     showJSON = JSString
 
-instance (JSON a) => JSON (JSObject a) where
+instance JSON JSObject where
     readJSON (JSObject o) =
         let f (x, y) = do
             y' <- readJSON y
@@ -144,7 +144,7 @@ instance JSON T.Text where
 makeObj :: [(String, JSValue)] -> JSValue
 makeObj = JSObject . toJSObject
 
-getFromObj :: JSON a => String -> JSObject JSValue -> Result a
+getFromObj :: JSON a => String -> JSObject -> Result a
 getFromObj k o =
     maybe
         (Error $ "valFromObj: Could not find key: " ++ show k)

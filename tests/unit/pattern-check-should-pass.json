@@ -1,0 +1,11 @@
+{
+    "input": {
+        "email": "german@german.com",
+        "password": "somepassword",
+        "some-mixin-from-frontend" : {
+            "mix": 1,
+            "mixin-type": "random"
+        }
+    },
+    "abracadavra" : [{}, {"a": "b"}]
+}

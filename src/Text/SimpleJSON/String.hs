@@ -3,6 +3,7 @@
 
 module Text.SimpleJSON.String(
     parseJSValue,
+    parseObj,
     showJSObject,
     showJSValue,
     StringRepresentable (..),
@@ -177,7 +178,7 @@ showJSRational r
 showJSArray :: [JSValue] -> ShowS
 showJSArray = showSequence '[' ']' ','
 
-showJSObject :: JSObject JSValue -> ShowS
+showJSObject :: JSObject -> ShowS
 showJSObject = showAssocs '{' '}' ',' . fromJSObject
 
 showAssocs :: Char -> Char -> Char -> [(String, JSValue)] -> ShowS
