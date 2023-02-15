@@ -57,6 +57,21 @@ toJSONGeneric :: (Data a) => a -> JSValue
 toJSONGeneric = generic
     where
         generic a =
+            -- let data Tree b = Leaf | Node (Tree b) b (Tree b) deriving (Typeable, Data, Show, Eq)
+            -- let instance = Node (Node Leaf 2 Leaf) 1 (Node Leaf 3 Leaf)
+
+            -- dataTypeOf :: a -> DataType (datatype name and all public constructors)
+            -- DataType {tycon = "Tree", datarep = AlgRep [Leaf,Node]}
+
+            -- dataTypeRep Gets the public presentation of a datatype
+            -- AlgRep [Leaf,Node]
+
+            -- toConstr - Obtaining the constructor from a given datum
+            -- Node
+            -- showConstr "Node"
+
+            -- gmapQ map current instance fields an return results
+
             case dataTypeRep (dataTypeOf a) of
                 AlgRep [] -> JSNull
                 AlgRep [c] -> encodeArgs c (toJSON `gmapQ` a)
@@ -66,9 +81,12 @@ toJSONGeneric = generic
         encodeConstr constr [] = JSString $ toJSString $ showConstr constr
         encodeConstr constr argList = makeObj [(showConstr constr, encodeArgs constr argList)]
 
+        -- constFields Gets the field labels of a constructor.
         encodeArgs constr = encodeArgs' (constrFields constr)
             where
+                -- no fields and one value -> value
                 encodeArgs' [] [j] = j
+                -- no fields and many values -> array
                 encodeArgs' [] js = JSArray js
                 encodeArgs' ns js = makeObj $ zip ns js
 
@@ -100,6 +118,7 @@ fromJSONGeneric j = generic
         typ = dataTypeOf $ resType generic
         generic = case dataTypeRep typ of
             AlgRep [] -> case j of JSNull -> return (error "Empty type"); _ -> Error "fromJSON: no-constr bad data"
+            -- indexConstr Gets the constructor for an index (algebraic datatypes only)
             AlgRep [_] -> decodeArgs (indexConstr typ 1) j
             AlgRep _ -> do (c, j') <- getConstr typ j; decodeArgs c j'
             rep -> Error $ "fromJSON: " ++ show rep ++ "(" ++ show typ ++ ")"
@@ -118,6 +137,7 @@ fromJSONGeneric j = generic
         decodeArgs' _ c fs@(_ : _) (JSObject o) = selectFields (fromJSObject o) fs >>= construct c -- field names
         decodeArgs' _ c _ jd = Error $ "fromJSON: bad decodeArgs data " ++ show (c, jd)
 
+        -- fromConstrM -> Build a term and use a generic function for subterms
         construct c = evalStateT $ fromConstrM f c
             where
                 f :: (Data a) => StateT [JSValue] Result a
