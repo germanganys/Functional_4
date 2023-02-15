@@ -45,6 +45,7 @@ setField (JSONObject xs) k v = JSONObject ((k, v) : filter ((/= k) . fst) xs)
 rmField :: JSObject -> String -> JSObject
 rmField (JSONObject xs) k = JSONObject (filter ((/= k) . fst) xs)
 
+sameConstructor :: (Data a1, Data a2) => a1 -> a2 -> Bool
 sameConstructor l r = toConstr l == toConstr r
 
 matchJSStructure :: JSObject -> JSObject -> Maybe JSObject
