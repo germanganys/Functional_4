@@ -39,6 +39,8 @@ import Text.ParserCombinators.Parsec (parse)
 
 type T a = a -> JSValue
 
+-- Список возможных типов данных, которые могут быть переведены в Haskell тип данных
+-- Здесь не может быть bad data ошибки, поскольку это output из программы в текст, уже проверенный
 toJSON :: (Data a) => a -> JSValue
 toJSON =
         toJSONGeneric
@@ -53,6 +55,7 @@ toJSON =
     where
         jList vs = JSArray $ map toJSON vs
 
+-- Если тип не был найден, то из generic типа делается JSValue тип, который затем будет выведен в JSON файл
 toJSONGeneric :: (Data a) => a -> JSValue
 toJSONGeneric = generic
     where
@@ -92,6 +95,8 @@ toJSONGeneric = generic
 
 type F a = Result a
 
+-- Список возможных типов данных, которые могут быть переведены в Haskell тип данных
+-- Если в JSArray ничего в себе не содержит - ошибка bad data
 fromJSON :: (Data a) => JSValue -> Result a
 fromJSON j =
     fromJSONGeneric j
@@ -112,10 +117,16 @@ fromJSON j =
             JSArray js -> mapM fromJSON js
             _ -> Error $ "fromJSON: Prelude.[] bad data: " ++ show j
 
+-- Аналогично с предыдущим пунктом, если данный тип не был найден, то создается generic конструктор, в который JSValue будет переведено
 fromJSONGeneric :: (Data a) => JSValue -> Result a
 fromJSONGeneric j = generic
     where
+        -- Создается тип для JSValue
         typ = dataTypeOf $ resType generic
+
+        -- Здесь смотрится, если JSValue не содержит в себе ничего или уже приходит ошибка - вывод ошибки и опционально тип
+        -- Если содержится массив чего-либо, алгоритм повторяется для каждого элемента
+        -- Если JSValue представлен чем-либо, то вызывается функция getConstr, возвращающая либо объект, либо строку и функцию decodeArgs, описанную ниже
         generic = case dataTypeRep typ of
             AlgRep [] -> case j of JSNull -> return (error "Empty type"); _ -> Error "fromJSON: no-constr bad data"
             -- indexConstr Gets the constructor for an index (algebraic datatypes only)
@@ -130,6 +141,7 @@ fromJSONGeneric j = generic
             (Error $ "fromJSON: unknown constructor: " ++ s ++ " " ++ show t)
             return $ readConstr t s
 
+        -- возвращает конструктор, с заданным количеством и названием полей
         decodeArgs c = decodeArgs' (numConstrArgs (resType generic) c) c (constrFields c)
         decodeArgs' 0 c _ JSNull = construct c [] -- nullary constructor
         decodeArgs' 1 c [] jd = construct c [jd] -- unary constructor
@@ -155,9 +167,11 @@ fromJSONGeneric j = generic
         resType :: Result a -> a
         resType _ = error "resType"
 
+-- в JSON
 encodeJSON :: (Data a) => a -> String
 encodeJSON x = showJSValue (toJSON x) ""
 
+-- из JSON
 decodeJSON :: (Data a) => String -> a
 decodeJSON s =
     case parse parseJSValue "" s of

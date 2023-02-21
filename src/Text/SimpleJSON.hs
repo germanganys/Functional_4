@@ -33,11 +33,15 @@ import Text.SimpleJSON.Types
       toJSObject )
 import Text.ParserCombinators.Parsec ( parse )
 
+-- Декодирование JSON файла в конструкторы может вызывать ошибку при неправильном синтаксе, поэтому
+-- Right - функция считывания
+-- Left - Вывод ошибки
 decode :: (StringRepresentable st, JSON a) => st -> Result a
 decode s = case parse parseJSValue "" (toString s) of
     Right a -> readJSON a
     Left err -> Error $ show err
 
+-- Вывод JSON файла
 encode :: (JSON a) => a -> String
 encode = flip showJSValue [] . showJSON
 
@@ -52,6 +56,9 @@ class JSON a where
     showJSONs :: [a] -> JSValue
     showJSONs = JSArray . map showJSON
 
+-- так как монада Result требует описание аппликативного функтора, то
+-- здесь написана простая реализация, где fmap = liftM, и pure = Ok, если все выполнилось
+-- Возвращает pure и применяет f к a
 data Result a = Ok a | Error String
     deriving (Eq, Show)
 
@@ -78,6 +85,8 @@ instance JSON JSValue where
 
 second :: (a -> b) -> (x, a) -> (x, b)
 second f (a, b) = (a, f b)
+
+-- Ниже описаны функции readJSON и showJSON для каждого варианта конструктора
 
 instance JSON JSString where
     readJSON (JSString s) = return s

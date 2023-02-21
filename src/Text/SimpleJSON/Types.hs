@@ -15,6 +15,8 @@ module Text.SimpleJSON.Types(
 import Data.Typeable (Typeable)
 import Data.Data (toConstr, Data)
 
+-- в данном файле представлены конструкторы JSValue с тем, какие значения они имеют
+-- и основные функции работы с JSON файлом
 data JSValue
     = JSNull
     | JSBool Bool

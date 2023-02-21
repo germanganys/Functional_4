@@ -61,6 +61,11 @@ instance StringRepresentable B.ByteString where toString :: B.ByteString -> Stri
 instance StringRepresentable LazyB.ByteString where toString :: LazyB.ByteString -> String
                                                     toString = T.unpack . decodeUtf8 . LazyB.toStrict
 
+-- Перевод файла со строками JSON осуществляется через библиотеку Parsec
+-- Тип объекта определяется через комбинатор: функции выполняются до тех пор, пока одна из них не выполнится успешно
+-- Библиотека Parsec имеет синтаксис, позволяющий легко парсить между строками
+-- Н-р: строка "spaces *> string "null" <* spaces" означает, что в шаблон поступает строка null без пробелов слева и справа
+--      вне зависимости от того, сколько стояло, т.е. возвращает просто "null"
 
 parseJSValue :: Parser JSValue
 parseJSValue = do
@@ -146,6 +151,7 @@ parseArray = do
     _ <- spaces *> char ']' <* spaces
     return $ JSArray a
 
+-- Функции, начинающиеся с parse переводят объект в JSON текст
 showJSValue :: JSValue -> ShowS
 showJSValue jv =
     case jv of

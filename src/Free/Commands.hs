@@ -17,6 +17,9 @@ import Control.Monad.Free ( Free, liftF )
 import Data.Text ( Text )
 import Text.SimpleJSON.Types ( JSValue(..), JSObject )
 
+-- Free Monad представляет из себя список возможный команд, с возможностью применения к ним функций
+--      и возвращающая next в случае успешного выполнения команды 
+--      (что позволяет перейти к выполнению следующей команды)
 data Cmd next
     = JSONFromFile String (JSObject -> next)
     | JSONToText JSValue (Text -> next)
