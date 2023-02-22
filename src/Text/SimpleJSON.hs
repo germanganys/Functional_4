@@ -20,7 +20,7 @@ module Text.SimpleJSON(
 
 import Control.Applicative()
 import Control.Monad (ap, liftM)
-import Control.Monad.Fail ()
+import Control.Monad.Fail
 import qualified Data.Map as M()
 import qualified Data.Text as T
 import Text.SimpleJSON.String
