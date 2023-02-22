@@ -55,6 +55,7 @@ makeJSON = derivationCustomDSL "JSON" custom $
 custom :: FullDataDecl -> [Decl ()] -> [Decl ()]
 custom = customSplice splice
 
+-- Кодогенерация функций, описанных ниже
 splice :: FullDataDecl -> Exp () -> Exp ()
 splice d x | x ~= "readJSON" = mkRead d
 splice d (H.App _ x (H.Lit _ (H.Int _ y _))) | x~= "showJSON" = mkShow d y
@@ -63,6 +64,8 @@ splice _ e = error $ "makeJSON: unrecognized splice: " ++ show e
 ------------------------------------------------------------------------------
 -- showJSON
 
+-- на основе библиотеки Language.Haskell создается образ функции, переводящей объект -> JSValue
+-- по данному шаблону, на основе полей конструктора создается функция, переводящая в JSValue с содержанием этих полей
 mkShow :: FullDataDecl -> Integer -> Exp ()
 mkShow d y = let
     hasFields = any (not . null . fst) (ctorDeclFields c)
@@ -84,6 +87,7 @@ mkShowRecordFields fs = mkJSObject $ H.List ()
 ------------------------------------------------------------------------------
 -- readJSON
 
+-- данная функция делает объект из JSValue, тоже на основе Language.Haskell
 mkRead :: FullDataDecl -> Exp ()
 mkRead (_, d) = let
     readError = H.App () (con "Error") $ strE "malformed JSON for type ...: ..."

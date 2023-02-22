@@ -289,6 +289,106 @@ newtype JSObject = JSONObject {fromJSObject :: [(String, JSValue)]}
     deriving (Eq, Ord, Show, Read, Typeable, Data)
 ```
 
+## Deriving 
+```haskell
+-- Кодогенерация функций, описанных ниже
+splice :: FullDataDecl -> Exp () -> Exp ()
+splice d x | x ~= "readJSON" = mkRead d
+splice d (H.App _ x (H.Lit _ (H.Int _ y _))) | x~= "showJSON" = mkShow d y
+splice _ e = error $ "makeJSON: unrecognized splice: " ++ show e
+
+------------------------------------------------------------------------------
+-- showJSON
+
+-- на основе библиотеки Language.Haskell создается образ функции, переводящей объект -> JSValue
+-- по данному шаблону, на основе полей конструктора создается функция, переводящая в JSValue с содержанием этих полей
+mkShow :: FullDataDecl -> Integer -> Exp ()
+mkShow d y = let
+    hasFields = any (not . null . fst) (ctorDeclFields c)
+    c = dataDeclCtors (snd d) !! fromInteger y
+    mkFields = if hasFields then mkShowRecordFields else mkShowPlainFields
+  in
+    mkJSObject $ H.List ()
+        [H.Tuple () H.Boxed [strE (ctorDeclName c), mkFields (ctorDeclFields c)]]
+
+mkShowPlainFields :: FieldDecl -> Exp ()
+mkShowPlainFields fs = mkJSArray $ H.List ()
+    [H.App () (var "showJSON") xi | xi <- vars "x" fs]
+
+mkShowRecordFields :: FieldDecl -> Exp ()
+mkShowRecordFields fs = mkJSObject $ H.List ()
+    [ H.Tuple () H.Boxed [strE fn, H.App () (var "showJSON") xi]
+    | ((fn, _), xi) <- zip fs (vars "x" fs)]
+
+------------------------------------------------------------------------------
+-- readJSON
+
+-- данная функция делает объект из JSValue, тоже на основе Language.Haskell
+mkRead :: FullDataDecl -> Exp ()
+mkRead (_, d) = let
+    readError = H.App () (con "Error") $ strE "malformed JSON for type ...: ..."
+  in
+    H.Case () (H.App () (var "fromJSObject") $ var "x") $
+    map mkReadCtor (dataDeclCtors d) ++
+    [H.Alt () (H.PWildCard ()) (H.UnGuardedRhs () readError) Nothing]
+
+mkReadCtor :: CtorDecl -> Alt ()
+mkReadCtor c = let
+    cn = ctorDeclName c
+    fs = ctorDeclFields c
+    hasFields = any (not . null . fst) fs
+    body | hasFields = mkReadRecord cn fs
+         | otherwise = mkReadPlain cn fs
+  in
+    H.Alt () (H.PList () [H.PTuple () H.Boxed [strP cn, pVar "y"]])
+         (H.UnGuardedRhs () body) Nothing
+
+mkReadRecord :: String -> FieldDecl -> Exp ()
+mkReadRecord cn fs = H.Do () $
+    [H.Generator () (H.PApp () (qname "JSObject") [pVar "z"])
+          (H.App () (var "return") $ var "y")] ++
+    [H.LetStmt () $ H.BDecls () [H.PatBind () (pVar "d")
+          (H.UnGuardedRhs () $ H.App () (var "fromJSObject") $ var "z")
+          Nothing]] ++
+    zipWith (mkReadRecordField cn) (pVars "x" fs) fs ++
+    mkReadTrailer cn fs
+
+mkReadRecordField :: String -> Pat () -> (String, Type ()) -> Stmt ()
+mkReadRecordField cn xi (fn, _) = H.Generator () xi $
+    apps (var "maybe") [
+        H.App () (var "fail") $ strE (unwords ["readJSON: missing field", fn,
+                                          "while decoding a", cn]),
+        var "return",
+        apps (var "lookup") [strE fn, var "d"]]
+
+mkReadPlain :: String -> FieldDecl -> Exp ()
+mkReadPlain cn fs = H.Do () $
+    [H.Generator () (H.PApp () (qname "JSArray") [H.PList () (pVars "x" fs)])
+        (H.App () (var "return") $ var "y")] ++
+    mkReadTrailer cn fs
+
+mkReadTrailer :: String -> FieldDecl -> [Stmt ()]
+mkReadTrailer cn fs =
+    [ H.Generator () yi (H.App () (var "readJSON") xi)
+    | (xi, yi) <- zip (vars "x" fs) (pVars "y" fs)] ++
+    [H.Qualifier () $ H.App () (var "return") $ apps (con cn) (vars "y" fs)]
+
+------------------------------------------------------------------------------
+-- utilites
+
+mkJSObject :: Exp () -> Exp ()
+mkJSObject e = H.App () (con "JSObject") (H.App () (var "toJSObject") e)
+
+mkJSArray :: Exp () -> Exp ()
+mkJSArray e = H.App () (con "JSArray") e
+
+vars :: String -> FieldDecl -> [Exp ()]
+vars pre fs = [var (pre ++ show i) | i <- [1..length fs]]
+
+pVars :: String -> FieldDecl -> [Pat ()]
+pVars pre fs = [pVar (pre ++ show i) | i <- [1..length fs]]
+```
+
 ## Выводы
  
 В ходе выполнения данной лабораторной работы освоили библиотеку Data.Generics и концепцией Free Monad
